@@ -12,23 +12,26 @@ import time
 import logging
 from cbcommslib import CbApp
 from cbconfig import *
+from twisted.internet import reactor
 
 times = [
-         {
-             ""
-def nicetime(timeStamp):
-    localtime = time.localtime(timeStamp)
-    milliseconds = '%03d' % int((timeStamp - int(timeStamp)) * 1000)
-    now = time.strftime('%Y-%m-%d %H:%M:%S', localtime)
-    return now
+         {"on": ['23', '30', '00']},
+         {"off" : ['01', '30', '00']}
+        ]
 
-def epochtime(date_time):
-    pattern = '%Y-%m-%d %H:%M:%S'
-    epoch = int(time.mktime(time.strptime(date_time, pattern)))
-    return epoch
-
-def calcnext():
-
+def delay(n, tomorrow=False):
+    now = time.time()
+    if tomorrow:
+        localtime = time.localtime(now + 24*60*60)
+    else:
+        localtime = time.localtime(now)
+    t = time.strftime('%Y %m %d %H %M %S', localtime).split()
+    t[3] = n[0]
+    t[4] = n[1]
+    t[5] = n[2]
+    t1 = ' '.join(t)
+    epoch = int(time.mktime(time.strptime(t1, '%Y %m %d %H %M %S')))
+    return int(epoch - now)
 
 class App(CbApp):
     def __init__(self, argv):
@@ -36,6 +39,7 @@ class App(CbApp):
         self.appClass = "control"
         self.state = "stopped"
         self.gotSwitch = False
+        self.step = "off" 
         self.sensorsID = [] 
         self.switchID = ""
         # Super-class init must be called
@@ -47,6 +51,27 @@ class App(CbApp):
                "status": "state",
                "state": self.state}
         self.sendManagerMessage(msg)
+
+    def startTiming(self):
+        if self.step == "off":
+            switchDel = delay(['23', '30', '00'])
+        else:
+            switchDel = delay(['01', '30', '00'], True)
+        logging.debug("%s startTimiing, switchDel: %s, time: %s", ModuleName, str(switchDel), str(time.time()))
+        reactor.callLater(switchDel, self.doTiming)
+
+    def doTiming(self):
+        command = {"id": self.id,
+                   "request": "command"}
+        if self.step == "off":
+            command["data"] = "on"
+            self.step = "on"
+        else:
+            command["data"] = "off"
+            self.step = "off"
+        self.sendMessage(command, self.switchID)
+        logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], str(time.time()))
+        self.startTiming()
 
     def onAdaptorService(self, message):
         logging.debug("%s onadaptorService, message: %s", ModuleName, message)
@@ -119,6 +144,7 @@ class App(CbApp):
 
     def onConfigureMessage(self, config):
         #logging.debug("%s onConfigureMessage, config: %s", ModuleName, config)
+        self.startTiming()
         self.setState("starting")
 
 if __name__ == '__main__':
