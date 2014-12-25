@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#toasty_app.py
+#toasty_app_a.py
 """
 Copyright (c) 2014 ContinuumBridge Limited
 
@@ -10,28 +10,14 @@ import sys
 import os.path
 import time
 import logging
+import json
 from cbcommslib import CbApp
 from cbconfig import *
 from twisted.internet import reactor
 
-times = [
-         {"on": ['23', '30', '00']},
-         {"off" : ['01', '30', '00']}
-        ]
-
-def delay(n, tomorrow=False):
-    now = time.time()
-    if tomorrow:
-        localtime = time.localtime(now + 24*60*60)
-    else:
-        localtime = time.localtime(now)
-    t = time.strftime('%Y %m %d %H %M %S', localtime).split()
-    t[3] = n[0]
-    t[4] = n[1]
-    t[5] = n[2]
-    t1 = ' '.join(t)
-    epoch = int(time.mktime(time.strptime(t1, '%Y %m %d %H %M %S')))
-    return int(epoch - now)
+CHECK_DELAY = 60   # How often to check the times and switch
+ontimes = []
+offtimes = []
 
 class App(CbApp):
     def __init__(self, argv):
@@ -39,9 +25,22 @@ class App(CbApp):
         self.appClass = "control"
         self.state = "stopped"
         self.gotSwitch = False
-        self.step = "off" 
+        self.switchState = "off" 
         self.sensorsID = [] 
         self.switchID = ""
+        configFile = CB_CONFIG_DIR + "toasty.json"
+        global ontimes, offtimes
+        try:
+            with open(configFile, 'r') as configFile:
+                config = json.load(configFile)
+                ontimes = config["ontimes"]
+                logging.debug("%s ontimes: %s", ModuleName, ontimes)
+                offtimes = config["offtimes"]
+                logging.debug("%s offtimes: %s", ModuleName, offtimes)
+                logging.info('%s Read toasty.json', ModuleName)
+        except Exception as ex:
+            logging.warning('%s toasty.json does not exist or file is corrupt', ModuleName)
+            logging.warning("%s Exception: %s %s", ModuleName, type(ex), str(ex.args))
         # Super-class init must be called
         CbApp.__init__(self, argv)
 
@@ -52,75 +51,91 @@ class App(CbApp):
                "state": self.state}
         self.sendManagerMessage(msg)
 
-    def startTiming(self):
-        if self.step == "off":
-            switchDel = delay(['23', '30', '00'])
-        else:
-            switchDel = delay(['01', '30', '00'], True)
-        logging.debug("%s startTimiing, switchDel: %s, time: %s", ModuleName, str(switchDel), str(time.time()))
-        reactor.callLater(switchDel, self.doTiming)
-
     def doTiming(self):
-        command = {"id": self.id,
-                   "request": "command"}
-        if self.step == "off":
-            command["data"] = "on"
-            self.step = "on"
-        else:
-            command["data"] = "off"
-            self.step = "off"
-        self.sendMessage(command, self.switchID)
-        logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], str(time.time()))
-        self.startTiming()
+        if self.gotSwitch:
+            now = time.strftime('%a %H:%M', time.localtime())
+            if self.switchState == "off":
+                for t in ontimes:
+                    if t == now:
+                        command = {"id": self.id,
+                                   "request": "command",
+                                   "data": "on"}
+                        self.sendMessage(command, self.switchID)
+                        logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
+                        self.switchState = "on"
+            elif self.switchState == "on":
+                for t in offtimes:
+                    if t == now:
+                        command = {"id": self.id,
+                                   "request": "command",
+                                   "data": "off"}
+                        self.sendMessage(command, self.switchID)
+                        logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
+                        self.switchState = "off"
+        reactor.callLater(CHECK_DELAY, self.doTiming)
 
     def onAdaptorService(self, message):
         logging.debug("%s onadaptorService, message: %s", ModuleName, message)
         sensor = False
         switch = False
         buttons = False
+        binary_sensor = False
         number_buttons = False
         for p in message["service"]:
             if p["characteristic"] == "buttons":
                 buttons = True
-            elif p["characteristic"] == "number_buttons":
+            if p["characteristic"] == "number_buttons":
                 number_buttons = True
-            elif p["characteristic"] == "switch":
+            if p["characteristic"] == "switch":
                 switch = True
+            if p["characteristic"] == "binary_sensor":
+                binary_sensor = True
         if buttons:
             self.sensorsID.append(message["id"])
             req = {"id": self.id,
-                  "request": "service",
-                  "service": [
-                                {"characteristic": "buttons",
-                                 "interval": 0
-                                }
-                             ]
+                   "request": "service",
+                   "service": [
+                                 {"characteristic": "buttons",
+                                  "interval": 0
+                                 }
+                              ]
                   }
             self.sendMessage(req, message["id"])
-            #logging.debug("%s onadaptorservice, req: %s", ModuleName, req)
-        elif number_buttons:
+        if number_buttons:
             self.sensorsID.append(message["id"])
             req = {"id": self.id,
-                  "request": "service",
-                  "service": [
-                                {"characteristic": "number_buttons",
-                                 "interval": 0
-                                }
-                             ]
+                   "request": "service",
+                   "service": [
+                                 {"characteristic": "number_buttons",
+                                  "interval": 0
+                                 }
+                              ]
                   }
             self.sendMessage(req, message["id"])
-        elif switch:
+        if switch:
             self.switchID = message["id"]
             self.gotSwitch = True
-            #logging.debug("%s switchID: %s", ModuleName, self.switchID)
+            if binary_sensor:
+                req = {"id": self.id,
+                       "request": "service",
+                       "service": [
+                                     {"characteristic": "binary_sensor",
+                                      "interval": 0
+                                     }
+                                  ]
+                      }
+                self.sendMessage(req, message["id"])
+            #logging.debug("%s onadaptorservice, req: %s", ModuleName, req)
         self.setState("running")
 
     def onAdaptorData(self, message):
-        logging.debug("%s %s onAdaptorData. message: %s", ModuleName, self.id, str(message))
+        #logging.debug("%s %s onAdaptorData. message: %s", ModuleName, self.id, str(message))
         if message["id"] in self.sensorsID:
             if self.gotSwitch:
                 command = {"id": self.id,
-                           "request": "command"}
+                           "request": "command",
+                           "data": ""
+                          }
                 if message["characteristic"] == "buttons":
                     if message["data"]["rightButton"] == 1:
                         command["data"] = "on"
@@ -128,23 +143,23 @@ class App(CbApp):
                     elif message["data"]["leftButton"] == 1:
                         command["data"] = "off"
                         self.sendMessage(command, self.switchID)
-                elif message["characteristic"] == "binary_sensor":
-                    command["data"] = message["data"]
-                    self.sendMessage(command, self.switchID)
                 elif message["characteristic"] == "number_buttons":
-                    if "on" in  message["data"].values():
-                        command["data"] = "on"
-                    else:
-                        command["data"] = "off"
-                    self.sendMessage(command, self.switchID)
+                    for m in message["data"].keys():
+                        if m == "1":
+                            command["data"] = "on"
+                        self.sendMessage(command, self.switchID)
+                    for m in message["data"].keys():
+                        if m == "3":
+                            command["data"] = "off"
+                        self.sendMessage(command, self.switchID)
             else:
                 logging.debug("%s Trying to turn on/off before switch connected", ModuleName)
         elif message["id"] == self.switchID:
-            self.switchState = message["body"]
+            self.switchState = message["data"]
 
     def onConfigureMessage(self, config):
         #logging.debug("%s onConfigureMessage, config: %s", ModuleName, config)
-        self.startTiming()
+        self.doTiming()
         self.setState("starting")
 
 if __name__ == '__main__':
