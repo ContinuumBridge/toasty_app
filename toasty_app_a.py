@@ -147,11 +147,10 @@ class App(CbApp):
                     for m in message["data"].keys():
                         if m == "1":
                             command["data"] = "on"
-                        self.sendMessage(command, self.switchID)
-                    for m in message["data"].keys():
-                        if m == "3":
+                            self.sendMessage(command, self.switchID)
+                        elif m == "3":
                             command["data"] = "off"
-                        self.sendMessage(command, self.switchID)
+                            self.sendMessage(command, self.switchID)
             else:
                 logging.debug("%s Trying to turn on/off before switch connected", ModuleName)
         elif message["id"] == self.switchID:

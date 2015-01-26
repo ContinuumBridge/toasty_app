@@ -1,9 +1,9 @@
 {
     "exe": "toasty_app.py", 
     "name": "Toasty App", 
-    "url": "https://github.com/ContinuumBridge/toasty_app/archive/v0.1.0.tar.gz", 
+    "url": "https://github.com/ContinuumBridge/toasty_app/archive/v1.0.0.tar.gz", 
     "app_resource": "/api/bridge/v1/app/13/", 
-    "version": "0.1.0", 
+    "version": "1.0.0", 
     "provider": "ContinuumBridge", 
     "description": "App to control an electric blanket and a heater based on times of day and button presses."
 }
