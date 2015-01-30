@@ -54,24 +54,22 @@ class App(CbApp):
     def doTiming(self):
         if self.gotSwitch:
             now = time.strftime('%a %H:%M', time.localtime())
-            if self.switchState == "off":
-                for t in ontimes:
-                    if t == now:
-                        command = {"id": self.id,
-                                   "request": "command",
-                                   "data": "on"}
-                        self.sendMessage(command, self.switchID)
-                        logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
-                        self.switchState = "on"
-            elif self.switchState == "on":
-                for t in offtimes:
-                    if t == now:
-                        command = {"id": self.id,
-                                   "request": "command",
-                                   "data": "off"}
-                        self.sendMessage(command, self.switchID)
-                        logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
-                        self.switchState = "off"
+            for t in ontimes:
+                if t == now:
+                    command = {"id": self.id,
+                               "request": "command",
+                               "data": "on"}
+                    self.sendMessage(command, self.switchID)
+                    logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
+                    self.switchState = "on"
+            for t in offtimes:
+                if t == now:
+                    command = {"id": self.id,
+                               "request": "command",
+                               "data": "off"}
+                    self.sendMessage(command, self.switchID)
+                    logging.debug("%s doTimiing, command: %s, time: %s", ModuleName, command["data"], now)
+                    self.switchState = "off"
         reactor.callLater(CHECK_DELAY, self.doTiming)
 
     def onAdaptorService(self, message):
